@@ -113,7 +113,7 @@
     </podspec>
 
 		<hook type="after_plugin_install" src="hooks/ios/prerequisites.js"/>
-    <resource-file src="src/ios/PrivacyInfo.xcprivacy" target="PrivacyInfo.xcprivacy" />
+    <resource-file src="src/ios/CDVFile.bundle" target="CDVFile.bundle" />
   </platform>
 
   <!-- browser -->
