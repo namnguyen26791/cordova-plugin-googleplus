@@ -39,83 +39,14 @@
 }
 
 - (void) login:(CDVInvokedUrlCommand*)command {
-    NSDictionary* options = command.arguments[0];
-    NSString *reversedClientId = [self getreversedClientId];
-    NSString *clientId = [self reverseUrlScheme:reversedClientId];
-
-    NSString* scopesString = options[@"scopes"];
-    NSString* serverClientId = options[@"webClientId"];
-    NSString *loginHint = options[@"loginHint"];
-    BOOL offline = [options[@"offline"] boolValue];
-    NSArray* scopes = nil;
-    if (scopesString != nil) {
-        scopes = [scopesString componentsSeparatedByString:@" "];
-        //[signIn setScopes:scopes];
-    }
-    [[self getGIDSignInObject:command] signInWithPresentingViewController:self.viewController hint:loginHint additionalScopes:scopes completion:^(GIDSignInResult * _Nullable signInResult, NSError * _Nullable error) {
-        if (error) {
-            CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.localizedDescription];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:self->_callbackId];
-        } else {
-            NSString *email = signInResult.user.profile.email;
-            NSString *idToken = signInResult.user.idToken.tokenString;
-            NSString *accessToken = signInResult.user.accessToken.tokenString;
-            NSString *refreshToken = signInResult.user.refreshToken.tokenString;
-            NSString *userId = signInResult.user.userID;
-            NSString *serverAuthCode = signInResult.serverAuthCode != nil ? signInResult.serverAuthCode : @"";
-            NSURL *imageUrl = [signInResult.user.profile imageURLWithDimension:120]; // TODO pass in img size as param, and try to sync with Android
-            NSDictionary *result = @{
-                           @"email"           : email,
-                           @"idToken"         : idToken,
-                           @"serverAuthCode"  : serverAuthCode,
-                           @"accessToken"     : accessToken,
-                           @"refreshToken"    : refreshToken,
-                           @"userId"          : userId,
-                           @"displayName"     : signInResult.user.profile.name       ? : [NSNull null],
-                           @"givenName"       : signInResult.user.profile.givenName  ? : [NSNull null],
-                           @"familyName"      : signInResult.user.profile.familyName ? : [NSNull null],
-                           @"imageUrl"        : imageUrl ? imageUrl.absoluteString : [NSNull null],
-                           };
-
-            CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:self->_callbackId];
-        }
-    }];
+  [[self getGIDSignInObject:command] signIn];
 }
 
 /** Get Google Sign-In object
  @date July 19, 2015
  */
 - (void) trySilentLogin:(CDVInvokedUrlCommand*)command {
-    [[self getGIDSignInObject:command] restorePreviousSignInWithCompletion:^(GIDGoogleUser * _Nullable user, NSError * _Nullable error) {
-        if (error) {
-            CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.localizedDescription];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:self->_callbackId];
-        } else {
-            NSString *email = user.profile.email;
-            NSString *idToken = user.idToken.tokenString;
-            NSString *accessToken = user.accessToken.tokenString;
-            NSString *refreshToken = user.refreshToken.tokenString;
-            NSString *userId = user.userID;
-            //NSString *serverAuthCode = signInResult.serverAuthCode != nil ? signInResult.serverAuthCode : @"";
-            NSURL *imageUrl = [user.profile imageURLWithDimension:120]; // TODO pass in img size as param, and try to sync with Android
-            NSDictionary *result = @{
-                           @"email"           : email,
-                           @"idToken"         : idToken,
-                           @"serverAuthCode"  : @"",//serverAuthCode
-                           @"accessToken"     : accessToken,
-                           @"refreshToken"    : refreshToken,
-                           @"userId"          : userId,
-                           @"displayName"     : user.profile.name       ? : [NSNull null],
-                           @"givenName"       : user.profile.givenName  ? : [NSNull null],
-                           @"familyName"      : user.profile.familyName ? : [NSNull null],
-                           @"imageUrl"        : imageUrl ? imageUrl.absoluteString : [NSNull null],
-                           };
-
-            CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:self->_callbackId];
-        }
-    }];
+    [[self getGIDSignInObject:command] restorePreviousSignIn];
 }
 
 /** Get Google Sign-In object
@@ -123,7 +54,6 @@
  @date updated March 15, 2015 (@author PointSource,LLC)
  */
 - (GIDSignIn*) getGIDSignInObject:(CDVInvokedUrlCommand*)command {
-    //global assignment for completion
     _callbackId = command.callbackId;
     NSDictionary* options = command.arguments[0];
     NSString *reversedClientId = [self getreversedClientId];
@@ -136,20 +66,34 @@
 
     NSString *clientId = [self reverseUrlScheme:reversedClientId];
 
+    NSString* scopesString = options[@"scopes"];
     NSString* serverClientId = options[@"webClientId"];
+    NSString *loginHint = options[@"loginHint"];
     BOOL offline = [options[@"offline"] boolValue];
     NSString* hostedDomain = options[@"hostedDomain"];
 
 
     GIDSignIn *signIn = [GIDSignIn sharedInstance];
-    GIDConfiguration *configuration = [[GIDConfiguration alloc] initWithClientID:clientId];
+    signIn.clientID = clientId;
+
+    [signIn setLoginHint:loginHint];
+
     if (serverClientId != nil && offline) {
-        configuration = [[GIDConfiguration alloc] initWithClientID:clientId serverClientID:serverClientId hostedDomain:hostedDomain openIDRealm:nil];
+      signIn.serverClientID = serverClientId;
     }
-    
-    [signIn setConfiguration:configuration];
-    
-    
+
+    if (hostedDomain != nil) {
+        signIn.hostedDomain = hostedDomain;
+    }
+
+    signIn.presentingViewController = self.viewController;
+    signIn.delegate = self;
+
+    // default scopes are email and profile
+    if (scopesString != nil) {
+        NSArray* scopes = [scopesString componentsSeparatedByString:@" "];
+        [signIn setScopes:scopes];
+    }
     return signIn;
 }
 
@@ -184,19 +128,62 @@
 }
 
 - (void) disconnect:(CDVInvokedUrlCommand*)command {
-    [[GIDSignIn sharedInstance] disconnectWithCompletion:^(NSError * _Nullable error) {
-        CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"disconnected"];
-        if (error != nil) {
-            NSLog(@"Failed to disconnect: %@", error.localizedDescription);
-            CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.localizedDescription];
-        }
-        
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-    }];
+  [[GIDSignIn sharedInstance] disconnect];
+  CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"disconnected"];
+  [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 - (void) share_unused:(CDVInvokedUrlCommand*)command {
   // for a rainy day.. see for a (limited) example https://github.com/vleango/GooglePlus-PhoneGap-iOS/blob/master/src/ios/GPlus.m
+}
+
+#pragma mark - GIDSignInDelegate
+/** Google Sign-In SDK
+ @date July 19, 2015
+ */
+- (void)signIn:(GIDSignIn *)signIn didSignInForUser:(GIDGoogleUser *)user withError:(NSError *)error {
+    if (error) {
+        CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.localizedDescription];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:_callbackId];
+    } else {
+        NSString *email = user.profile.email;
+        NSString *idToken = user.authentication.idToken;
+        NSString *accessToken = user.authentication.accessToken;
+        NSString *refreshToken = user.authentication.refreshToken;
+        NSString *userId = user.userID;
+        NSString *serverAuthCode = user.serverAuthCode != nil ? user.serverAuthCode : @"";
+        NSURL *imageUrl = [user.profile imageURLWithDimension:120]; // TODO pass in img size as param, and try to sync with Android
+        NSDictionary *result = @{
+                       @"email"           : email,
+                       @"idToken"         : idToken,
+                       @"serverAuthCode"  : serverAuthCode,
+                       @"accessToken"     : accessToken,
+                       @"refreshToken"    : refreshToken,
+                       @"userId"          : userId,
+                       @"displayName"     : user.profile.name       ? : [NSNull null],
+                       @"givenName"       : user.profile.givenName  ? : [NSNull null],
+                       @"familyName"      : user.profile.familyName ? : [NSNull null],
+                       @"imageUrl"        : imageUrl ? imageUrl.absoluteString : [NSNull null],
+                       };
+
+        CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:_callbackId];
+    }
+}
+
+/** Google Sign-In SDK
+ @date July 19, 2015
+ */
+- (void)signIn:(GIDSignIn *)signIn presentViewController:(UIViewController *)viewController {
+    self.isSigningIn = YES;
+    [self.viewController presentViewController:viewController animated:YES completion:nil];
+}
+
+/** Google Sign-In SDK
+ @date July 19, 2015
+ */
+- (void)signIn:(GIDSignIn *)signIn dismissViewController:(UIViewController *)viewController {
+    [self.viewController dismissViewControllerAnimated:YES completion:nil];
 }
 
 @end
